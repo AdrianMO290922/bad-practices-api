@@ -13,6 +13,7 @@ const userResponse = z.object({
   name: z.string(),
   balance: z.number(),
   //address: z.string(),
+  
 });
 function generateRandomUser(id: number) {
   const firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
@@ -115,11 +116,15 @@ const app = new Elysia()
   .post("/login", ({ body, error }) => {
     const { curp, password } = body;
     const user = bankUsers.find((u) => u.curp == curp && u.password == password);
+    if (!user) {
+      console.error(`Invalid credentials for CURP ${curp} or pass`);
+      return status(401, { status: 401,message: `Invalid credentials for CURP ${curp} or password ${password}` });
+    }
     return userResponse.parse(user);
   },
   {body: t.Object({
-    curp: t.String(),
-    password: t.String(),
+    curp: t.String({minLength: 18}),
+    password: t.String({minLength: 8}),
   }),
   response: t.Object({
     id: t.Number(),
