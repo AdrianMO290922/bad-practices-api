@@ -15,11 +15,11 @@ const userResponse = z.object({
   //address: z.string(),
   
 });
-function generateRandomUser(id: number) {
+async function generateRandomUser(id: number) {
   const firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
   const lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
   const address = `${addresses[Math.floor(Math.random() * addresses.length)]} #${Math.floor(Math.random() * 1000)}`;
-  
+  const badPassword = `pass${Math.floor(Math.random() * 10000)}`
   return {
     id,
     name: `${firstName} ${lastName}`,
@@ -27,12 +27,12 @@ function generateRandomUser(id: number) {
     address,
     curp: `CURP${id}${Date.now().toString().slice(-4)}`,
     rfc: `RFC${id}${Date.now().toString().slice(-4)}`,
-    password: `pass${Math.floor(Math.random() * 10000)}`, 
+    password: await Bun.password.hash(badPassword), //! La godPassword jeje 
   };
 }
 
 for (let i = 1; i <= 100; i++) {
-  bankUsers.push(generateRandomUser(i));
+  bankUsers.push(await generateRandomUser(i)); //!await por el async de la generacion de contras jeje
 }
 
 // TODO: Resolver malas prácticas de seguridad
@@ -54,10 +54,12 @@ const app = new Elysia()
   //vALIDACION DE QUE SEA NUMERICO
   {params: t.Object({ id: t.Number() })
 })
-  .post("/users", ({ body, error }) => {
+  .post("/users", async ({ body, error }) => {
+    const godPassword = await Bun.password.hash(body.password); //!Otra excelente validacion jeje
     const newUser = {
       ...body,
-      id: bankUsers.length + 1
+      id: bankUsers.length + 1,
+      password: godPassword,
     };
     bankUsers.push(newUser);
     const newUserValidated = userResponse.parse(newUser);
@@ -74,13 +76,17 @@ const app = new Elysia()
 
   })
 })
-  .put("/users/:id", ({ params: { id }, body, error }) => {
+  .put("/users/:id", async  ({ params: { id }, body, error }) => {
     const index = bankUsers.findIndex((u) => u.id == id);
     if (index === -1) {
       console.error(`User with id ${id} not found`);
       return status(404, { status: 404,message: `User with id ${id} not found` });
     }
+    
     const updatedUser = { ...bankUsers[index], ...body };
+    if (body.password) {
+      updatedUser.password = await Bun.password.hash(body.password); //!Esta es para cuando actualicen la contra
+    }
     bankUsers[index] = updatedUser;
     const response = userResponse.parse(updatedUser);
     response.message = `User with id ${id} updated successfully`;
@@ -113,12 +119,17 @@ const app = new Elysia()
   {params: t.Object({ id: t.Number() })}
 
 )
-  .post("/login", ({ body, error }) => {
+  .post("/login",  async ({ body, error }) => {
     const { curp, password } = body;
-    const user = bankUsers.find((u) => u.curp == curp && u.password == password);
+    const user = bankUsers.find((u) => u.curp == curp);//! Aqui mero le quite la password jeje
     if (!user) {
-      console.error(`Invalid credentials for CURP ${curp} or pass`);
-      return status(401, { status: 401,message: `Invalid credentials for CURP ${curp} or password ${password}` });
+      console.error(`Invalid credentials for CURP ${curp} `);
+      return status(401, { status: 401,message: `Invalid credentials` }); //! No especificar si el error es por CURP o contra
+    }
+    const passwordCorrect = await Bun.password.verify(password, user.password); //! Verificacion de contra con hash
+    if(!passwordCorrect){
+      console.error(`Invalid credentials for CURP ${curp} `);
+      return status(401, { status: 401,message: `Invalid credentials` }); //!Aqui nuevamente no se dice que pex
     }
     return userResponse.parse(user);
   },
